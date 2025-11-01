@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>♠️🌿🎸🧵 AssemblyNetwork Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <h1 class="title">♠️🌿🎸🧵 AssemblyNetwork</h1>
+      <p class="subtitle">Network Activity Tracking & Service Discovery</p>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Control Panel -->
+    <section class="card">
+      <h2>🎛️ Control Panel</h2>
+      <div class="controls">
+        <button id="scanBtn" class="btn btn-primary">
+          <span class="btn-icon">🔍</span>
+          Scan Network
+        </button>
+        <button id="refreshBtn" class="btn btn-secondary">
+          <span class="btn-icon">🔄</span>
+          Refresh Services
+        </button>
+        <button id="activityBtn" class="btn btn-secondary">
+          <span class="btn-icon">📊</span>
+          Load Activity
+        </button>
+      </div>
+      <div id="scanStatus" class="status-message"></div>
+    </section>
+
+    <!-- Network Info -->
+    <section class="card">
+      <h2>📡 Network Information</h2>
+      <div class="network-info">
+        <div class="info-item">
+          <span class="label">Subnet:</span>
+          <span class="value" id="subnet">192.168.7.0/24</span>
+        </div>
+        <div class="info-item">
+          <span class="label">Last Scan:</span>
+          <span class="value" id="lastScan">Never</span>
+        </div>
+        <div class="info-item">
+          <span class="label">Services Found:</span>
+          <span class="value" id="serviceCount">0</span>
+        </div>
+        <div class="info-item">
+          <span class="label">Activity Events:</span>
+          <span class="value" id="activityCount">0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Links -->
+    <section class="card">
+      <h2>🔗 Quick Links - Existing Dashboards</h2>
+      <div class="quick-links">
+        <a href="http://192.168.7.241:8000" target="_blank" class="link-card">
+          <span class="link-icon">🌐</span>
+          <span class="link-title">HTTP Server</span>
+          <span class="link-port">:8000</span>
+        </a>
+        <a href="http://192.168.7.241:8080" target="_blank" class="link-card">
+          <span class="link-icon">🌐</span>
+          <span class="link-title">HTTP Server</span>
+          <span class="link-port">:8080</span>
+        </a>
+        <a href="http://192.168.7.241:8083" target="_blank" class="link-card">
+          <span class="link-icon">🤖</span>
+          <span class="link-title">Gradio Host</span>
+          <span class="link-port">:8083</span>
+        </a>
+        <a href="http://192.168.7.241:8888" target="_blank" class="link-card">
+          <span class="link-icon">📜</span>
+          <span class="link-title">Agent Logs</span>
+          <span class="link-port">:8888</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- Discovered Services -->
+    <section class="card">
+      <h2>🖥️ Discovered Services</h2>
+      <div id="servicesGrid" class="services-grid">
+        <p class="placeholder">Click "Scan Network" to discover services...</p>
+      </div>
+    </section>
+
+    <!-- Activity Timeline -->
+    <section class="card">
+      <h2>📋 Activity Timeline</h2>
+      <div id="activityTimeline" class="activity-timeline">
+        <p class="placeholder">Click "Load Activity" to view recent events...</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>♠️ Nyro • 🌿 Aureon • 🎸 JamAI • 🧵 Synth</p>
+      <p class="footer-sub">AssemblyNetwork v1.0.0 • Made with ⚡ by gerico1007</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
