@@ -46,7 +46,7 @@ async function scanNetwork(subnet = '192.168.7.0/24') {
 
     const { stdout, stderr } = await execAsync(
       `nmap -sn ${subnet} -oG - | grep "Host:" | awk '{print $2}'`,
-      { timeout: 30000 }
+      { timeout: 120000 }
     );
 
     if (stderr && !stderr.includes('Warning')) {
@@ -69,7 +69,7 @@ async function scanNetwork(subnet = '192.168.7.0/24') {
       try {
         const { stdout: portScan } = await execAsync(
           `nmap -p ${commonPorts} ${host} -oG - | grep "Ports:" | sed 's/.*Ports: //'`,
-          { timeout: 10000 }
+          { timeout: 60000 }
         );
 
         const openPorts = portScan
