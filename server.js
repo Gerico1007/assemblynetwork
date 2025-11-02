@@ -35,8 +35,9 @@ app.get('/', (req, res) => {
 app.get('/api/scan', async (req, res) => {
   try {
     const subnet = req.query.subnet || '192.168.7.0/24';
+    const customPorts = req.query.ports || null;
 
-    console.log(`🔍 Scan request received for subnet: ${subnet}`);
+    console.log(`🔍 Scan request received for subnet: ${subnet}${customPorts ? ` with custom ports: ${customPorts}` : ''}`);
 
     // Log scan start event
     await logActivity({
@@ -48,8 +49,8 @@ app.get('/api/scan', async (req, res) => {
       metadata: { triggeredBy: req.ip }
     });
 
-    // Perform network scan
-    const services = await scanNetwork(subnet);
+    // Perform network scan (with optional custom ports)
+    const services = await scanNetwork(subnet, customPorts);
 
     // Update cache
     discoveredServices = services;

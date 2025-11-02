@@ -99,6 +99,55 @@ body {
   margin-bottom: 1rem;
 }
 
+/* Custom Ports Section */
+.custom-ports-section {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.custom-ports-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.custom-ports-input {
+  width: 100%;
+  padding: 0.75rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-family: monospace;
+  transition: border-color 0.3s;
+}
+
+.custom-ports-input:focus {
+  outline: none;
+  border-color: var(--nyro-blue);
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+}
+
+.custom-ports-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.custom-ports-help {
+  display: block;
+  margin-top: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
 .btn {
   padding: 0.75rem 1.5rem;
   border: none;

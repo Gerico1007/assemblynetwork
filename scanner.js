@@ -28,21 +28,32 @@ const SERVICE_SIGNATURES = {
   '9999': 'Custom Service',
   '10001': 'A2A Weather Agent',
   '10002': 'A2A Airbnb Agent',
+  '10070': 'AssemblyLook Dashboard',
   '27017': 'MongoDB'
 };
 
 /**
  * Scan network for active hosts and open ports
  * @param {string} subnet - Network subnet to scan (e.g., '192.168.7.0/24')
+ * @param {string} customPorts - Optional comma-separated custom ports to scan
  * @returns {Promise<Array>} Array of discovered services
  */
-async function scanNetwork(subnet = '192.168.7.0/24') {
+async function scanNetwork(subnet = '192.168.7.0/24', customPorts = null) {
   const timestamp = new Date().toISOString();
   console.log(`🔍 [${timestamp}] Starting network scan on ${subnet}...`);
 
   try {
-    // Quick scan of common ports
-    const commonPorts = '21,22,80,443,3000,3306,5000,5173,5432,6379,8000,8080,8083,8765,8888,9000,9999,10001,10002,27017';
+    // Quick scan of common ports (including custom AssemblyNetwork ports)
+    let commonPorts = '21,22,80,443,3000,3306,5000,5173,5432,6379,8000,8080,8083,8765,8888,9000,9999,10001,10002,10070,27017';
+
+    // Merge with custom ports from environment or parameter
+    const envCustomPorts = process.env.CUSTOM_PORTS;
+    if (customPorts || envCustomPorts) {
+      const additionalPorts = customPorts || envCustomPorts;
+      const allPorts = new Set([...commonPorts.split(','), ...additionalPorts.split(',')]);
+      commonPorts = Array.from(allPorts).sort((a, b) => parseInt(a) - parseInt(b)).join(',');
+      console.log(`📋 Scanning ${allPorts.size} ports (including custom ports: ${additionalPorts})`);
+    }
 
     const { stdout, stderr } = await execAsync(
       `nmap -sn ${subnet} -oG - | grep "Host:" | awk '{print $2}'`,

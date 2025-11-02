@@ -32,6 +32,19 @@
           Load Activity
         </button>
       </div>
+      <div class="custom-ports-section">
+        <label for="customPorts" class="custom-ports-label">
+          🔌 Custom Ports (optional):
+        </label>
+        <input
+          type="text"
+          id="customPorts"
+          class="custom-ports-input"
+          placeholder="e.g., 10070,12345,8888"
+          title="Enter comma-separated port numbers to scan in addition to default ports"
+        />
+        <small class="custom-ports-help">Add extra ports to scan (comma-separated)</small>
+      </div>
       <div id="scanStatus" class="status-message"></div>
     </section>
 

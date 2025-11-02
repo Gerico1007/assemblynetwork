@@ -137,7 +137,18 @@ async function scanNetwork() {
   showStatus('🔍 Scanning network for services...', 'info');
 
   try {
-    const response = await fetch(`${API_BASE}/api/scan`);
+    // Get custom ports from input field
+    const customPortsInput = document.getElementById('customPorts');
+    const customPorts = customPortsInput ? customPortsInput.value.trim() : '';
+
+    // Build API URL with optional custom ports
+    let apiUrl = `${API_BASE}/api/scan`;
+    if (customPorts) {
+      apiUrl += `?ports=${encodeURIComponent(customPorts)}`;
+      showStatus(`🔍 Scanning network (including custom ports: ${customPorts})...`, 'info');
+    }
+
+    const response = await fetch(apiUrl);
     const data = await response.json();
 
     if (data.success) {

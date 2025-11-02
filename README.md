@@ -130,6 +130,9 @@ UPSTASH_REDIS_REST_TOKEN=your_token_here
 
 # Network
 DEFAULT_SUBNET=192.168.7.0/24
+
+# Custom Ports (optional)
+CUSTOM_PORTS=10070,10071,12345
 ```
 
 ### Network Scanning
@@ -139,7 +142,37 @@ The scanner defaults to `192.168.7.0/24` but can be customized:
 ```bash
 # Scan custom subnet
 curl http://localhost:9000/api/scan?subnet=10.0.0.0/24
+
+# Scan with custom ports
+curl "http://localhost:9000/api/scan?ports=10070,12345,8888"
+
+# Combine subnet and custom ports
+curl "http://localhost:9000/api/scan?subnet=192.168.7.0/24&ports=10070,10071"
 ```
+
+### Custom Port Scanning
+
+**Method 1: Via Dashboard UI**
+1. Open dashboard at http://localhost:9000
+2. Enter custom ports in the "Custom Ports" field (e.g., `10070,12345`)
+3. Click "Scan Network"
+
+**Method 2: Via Environment Variable**
+```bash
+# Add to .env file
+CUSTOM_PORTS=10070,10071,12345
+
+# Restart server
+npm start
+```
+
+**Method 3: Via API Query Parameter**
+```bash
+curl "http://localhost:9000/api/scan?ports=10070,12345"
+```
+
+**Default Ports Scanned**:
+21, 22, 80, 443, 3000, 3306, 5000, 5173, 5432, 6379, 8000, 8080, 8083, 8765, 8888, 9000, 9999, 10001, 10002, **10070**, 27017
 
 ## 📊 Activity Event Model
 
