@@ -1,11 +1,13 @@
 /**
  * ♠️🌿🎸🧵 Network Scanner Module
  * Discovers active services on the local network (192.168.7.0/24)
+ * Enhanced with HTTP path discovery (Issue #1)
  */
 
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
+const { discoverServicePaths } = require('./path-discovery');
 
 // Common port-to-service mapping
 const SERVICE_SIGNATURES = {
@@ -36,9 +38,11 @@ const SERVICE_SIGNATURES = {
  * Scan network for active hosts and open ports
  * @param {string} subnet - Network subnet to scan (e.g., '192.168.7.0/24')
  * @param {string} customPorts - Optional comma-separated custom ports to scan
+ * @param {Object} options - Scan options
  * @returns {Promise<Array>} Array of discovered services
  */
-async function scanNetwork(subnet = '192.168.7.0/24', customPorts = null) {
+async function scanNetwork(subnet = '192.168.7.0/24', customPorts = null, options = {}) {
+  const { enablePathDiscovery = process.env.ENABLE_PATH_DISCOVERY === 'true' } = options;
   const timestamp = new Date().toISOString();
   console.log(`🔍 [${timestamp}] Starting network scan on ${subnet}...`);
 
@@ -109,6 +113,44 @@ async function scanNetwork(subnet = '192.168.7.0/24', customPorts = null) {
     }
 
     console.log(`\n📊 Total services discovered: ${services.length}`);
+
+    // Enhancement #1: HTTP Path Discovery
+    if (enablePathDiscovery) {
+      console.log(`\n🔍 Starting HTTP path discovery...`);
+
+      for (const service of services) {
+        // Only probe HTTP-like services
+        const isHttpService = ['HTTP', 'HTTPS', 'Node.js', 'Flask', 'Vite Dev Server', 'Gradio', 'Dashboard']
+          .some(type => service.service.includes(type));
+
+        if (isHttpService) {
+          try {
+            const customPathsStr = process.env.CUSTOM_PATHS || '';
+            const customPaths = customPathsStr ? customPathsStr.split(',') : [];
+
+            const pathResult = await discoverServicePaths(
+              service.host,
+              service.port,
+              service.service,
+              customPaths,
+              { timeout: 2000, onlySuccessful: false }
+            );
+
+            if (pathResult.isHttp) {
+              service.paths = pathResult.paths;
+              service.protocol = pathResult.protocol;
+              service.totalPathsFound = pathResult.totalFound;
+            }
+          } catch (error) {
+            console.error(`  ⚠️  Path discovery failed for ${service.host}:${service.port} - ${error.message}`);
+          }
+        }
+      }
+
+      const servicesWithPaths = services.filter(s => s.paths && s.paths.length > 0);
+      console.log(`\n🎯 Path discovery complete: ${servicesWithPaths.length} HTTP services enriched`);
+    }
+
     return services;
 
   } catch (error) {

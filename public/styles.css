@@ -348,6 +348,84 @@ body {
   margin-bottom: 0.25rem;
 }
 
+/* Paths Section - Enhancement #1 */
+.paths-section {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.paths-section strong {
+  color: var(--jamai-orange);
+  font-size: 0.9rem;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.paths-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.path-badge {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-family: monospace;
+  text-decoration: none;
+  border: 1px solid;
+  transition: all 0.2s;
+}
+
+.path-badge:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px var(--shadow);
+}
+
+/* HTTP Status Code Colors */
+.path-badge.status-200 {
+  background: rgba(80, 200, 120, 0.15);
+  border-color: var(--aureon-green);
+  color: var(--aureon-green);
+}
+
+.path-badge.status-200:hover {
+  background: rgba(80, 200, 120, 0.3);
+}
+
+.path-badge.status-300 {
+  background: rgba(243, 156, 18, 0.15);
+  border-color: var(--status-unknown);
+  color: var(--status-unknown);
+}
+
+.path-badge.status-300:hover {
+  background: rgba(243, 156, 18, 0.3);
+}
+
+.path-badge.status-400 {
+  background: rgba(231, 76, 60, 0.15);
+  border-color: var(--status-offline);
+  color: var(--status-offline);
+}
+
+.path-badge.status-400:hover {
+  background: rgba(231, 76, 60, 0.3);
+}
+
+.path-badge.status-500 {
+  background: rgba(155, 89, 182, 0.15);
+  border-color: var(--synth-purple);
+  color: var(--synth-purple);
+}
+
+.path-badge.status-500:hover {
+  background: rgba(155, 89, 182, 0.3);
+}
+
 .service-link {
   margin-top: 0.75rem;
   display: inline-block;

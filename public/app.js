@@ -59,6 +59,46 @@ function formatTimestamp(isoString) {
 }
 
 /**
+ * Get status badge class for HTTP status code
+ */
+function getStatusBadgeClass(statusCode) {
+  if (statusCode >= 200 && statusCode < 300) return 'status-200';
+  if (statusCode >= 300 && statusCode < 400) return 'status-300';
+  if (statusCode >= 400 && statusCode < 500) return 'status-400';
+  if (statusCode >= 500) return 'status-500';
+  return 'status-unknown';
+}
+
+/**
+ * Create paths list HTML
+ * Enhancement #1: HTTP Path Discovery
+ */
+function createPathsList(paths, protocol, host, port) {
+  if (!paths || paths.length === 0) {
+    return '';
+  }
+
+  const successfulPaths = paths.filter(p => p.available && p.statusCode >= 200 && p.statusCode < 400);
+
+  if (successfulPaths.length === 0) {
+    return '<div class="paths-section"><em>No accessible paths found</em></div>';
+  }
+
+  const pathsHtml = successfulPaths.map(p => {
+    const statusClass = getStatusBadgeClass(p.statusCode);
+    const url = `${protocol}://${host}:${port}${p.path}`;
+    return `<a href="${url}" target="_blank" class="path-badge ${statusClass}" title="${p.statusText}">${p.path} (${p.statusCode})</a>`;
+  }).join('');
+
+  return `
+    <div class="paths-section">
+      <strong>📂 Discovered Paths (${successfulPaths.length}):</strong>
+      <div class="paths-list">${pathsHtml}</div>
+    </div>
+  `;
+}
+
+/**
  * Create service card HTML
  */
 function createServiceCard(service) {
@@ -66,7 +106,9 @@ function createServiceCard(service) {
                       service.status === 'offline' ? 'status-offline' :
                       'status-unknown';
 
-  const serviceUrl = `http://${service.host}:${service.port}`;
+  const protocol = service.protocol || 'http';
+  const serviceUrl = `${protocol}://${service.host}:${service.port}`;
+  const pathsHtml = createPathsList(service.paths, protocol, service.host, service.port);
 
   return `
     <div class="service-card">
@@ -77,8 +119,10 @@ function createServiceCard(service) {
       <div class="service-details">
         <div><strong>Host:</strong> ${service.host}</div>
         <div><strong>Port:</strong> ${service.port}</div>
+        <div><strong>Protocol:</strong> ${protocol}</div>
         <div><strong>Last Seen:</strong> ${formatTimestamp(service.lastSeen)}</div>
       </div>
+      ${pathsHtml}
       <a href="${serviceUrl}" target="_blank" class="service-link">
         Open Service →
       </a>

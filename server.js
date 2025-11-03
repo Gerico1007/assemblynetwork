@@ -8,6 +8,7 @@ const express = require('express');
 const path = require('path');
 const { scanNetwork, checkPort } = require('./scanner');
 const { logActivity, getActivityLog, getActivityByDate } = require('./activity-logger');
+const { probeSinglePath } = require('./path-discovery');
 
 const app = express();
 const PORT = process.env.PORT || 9000;
@@ -196,6 +197,83 @@ app.post('/api/check', async (req, res) => {
 });
 
 /**
+ * GET /api/paths/:host/:port
+ * Get discovered paths for a specific service
+ * Enhancement #1: HTTP Path Discovery
+ */
+app.get('/api/paths/:host/:port', (req, res) => {
+  const { host, port } = req.params;
+
+  const service = discoveredServices.find(s => s.host === host && s.port === port);
+
+  if (!service) {
+    return res.status(404).json({
+      success: false,
+      error: 'Service not found. Run a network scan first.'
+    });
+  }
+
+  res.json({
+    success: true,
+    host,
+    port,
+    service: service.service,
+    paths: service.paths || [],
+    totalPaths: service.paths ? service.paths.length : 0,
+    totalFound: service.totalPathsFound || 0
+  });
+});
+
+/**
+ * POST /api/probe-path
+ * Manually probe a specific HTTP path
+ * Enhancement #1: HTTP Path Discovery
+ */
+app.post('/api/probe-path', async (req, res) => {
+  try {
+    const { host, port, path, protocol = 'http' } = req.body;
+
+    if (!host || !port || !path) {
+      return res.status(400).json({
+        success: false,
+        error: 'Host, port, and path are required'
+      });
+    }
+
+    console.log(`🔍 Manual path probe: ${protocol}://${host}:${port}${path}`);
+
+    const result = await probeSinglePath(host, port, path, { protocol });
+
+    // Log path probe activity
+    await logActivity({
+      eventType: 'path_check',
+      host,
+      port: port.toString(),
+      service: 'Manual Path Probe',
+      status: result.available && result.statusCode < 400 ? 'online' : 'offline',
+      metadata: {
+        path,
+        url: result.url,
+        statusCode: result.statusCode,
+        method: 'manual'
+      }
+    });
+
+    res.json({
+      success: true,
+      result
+    });
+
+  } catch (error) {
+    console.error('Path probe error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * GET /api/status
  * Get server status and configuration
  */
@@ -203,7 +281,7 @@ app.get('/api/status', (req, res) => {
   res.json({
     success: true,
     server: 'AssemblyNetwork Dashboard',
-    version: '1.0.0',
+    version: '1.1.0',
     uptime: process.uptime(),
     port: PORT,
     environment: process.env.NODE_ENV || 'development',
@@ -211,6 +289,7 @@ app.get('/api/status', (req, res) => {
     cachedServices: discoveredServices.length,
     features: {
       networkScanning: true,
+      pathDiscovery: process.env.ENABLE_PATH_DISCOVERY === 'true',
       activityLogging: !!process.env.UPSTASH_REDIS_REST_TOKEN,
       redisStorage: !!process.env.UPSTASH_REDIS_REST_TOKEN
     }
