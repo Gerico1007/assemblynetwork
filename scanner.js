@@ -135,10 +135,131 @@ async function checkPort(host, port) {
   }
 }
 
+/**
+ * Per-node known-port hints from issue #2 (Architecture: Tailscale-Aware Mesh Dashboard).
+ * Used as the default probe set per node — keeps scans fast and avoids probing
+ * ports that have no service on a given device (e.g. 4444 on an iOS peer).
+ *
+ * Empty array = use DEFAULT_TS_PORTS instead.
+ */
+const KNOWN_PORTS_PER_NODE = {
+  eury:   [22, 4444, 8000, 8083, 8765, 9000, 10070],
+  ginkgo: [22],
+  ilex:   [8022, 8888],
+  iriko:  [],
+  itea:   [],
+  larix:  [8022, 8766],
+  tilia:  [8022, 9090]
+};
+
+/**
+ * Default candidate ports for nodes with no hint (or when explicit override is requested).
+ */
+const DEFAULT_TS_PORTS = [22, 80, 443, 3000, 4444, 8000, 8022, 8083, 8765, 8766, 8888, 9000, 9090, 10070];
+
+/**
+ * Run `tailscale status --json` and project the peer list into the dashboard's shape.
+ * @returns {Promise<{self: object, tailnet: string, nodes: Array}>}
+ */
+async function getTailscaleNodes() {
+  const { stdout } = await execAsync('tailscale status --json', { timeout: 10000 });
+  const data = JSON.parse(stdout);
+
+  // For Self, `Online` flaps based on DERP state — use BackendState as the truth.
+  // For peers, `Online` is authoritative.
+  const selfIsUp = data.BackendState === 'Running';
+
+  const projectPeer = (p, isSelf = false) => {
+    const dns = (p.DNSName || '').replace(/\.$/, '');
+    const name = dns.split('.')[0] || p.HostName || 'unknown';
+    const ip = (p.TailscaleIPs || []).find(ip => /^\d+\.\d+\.\d+\.\d+$/.test(ip)) || (p.TailscaleIPs || [])[0] || null;
+    const isOnline = isSelf ? selfIsUp : !!p.Online;
+    return {
+      name,
+      dns,
+      ip,
+      os: (p.OS || 'unknown').toLowerCase(),
+      status: isOnline ? 'online' : 'offline',
+      lastSeen: p.LastSeen && !p.LastSeen.startsWith('0001-') ? p.LastSeen : null,
+      self: isSelf
+    };
+  };
+
+  const selfNode = data.Self ? projectPeer(data.Self, true) : null;
+  const peers = Object.values(data.Peer || {}).map(p => projectPeer(p, false));
+
+  const nodes = (selfNode ? [selfNode, ...peers] : peers)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return {
+    self: selfNode,
+    tailnet: data.MagicDNSSuffix || (data.CurrentTailnet && data.CurrentTailnet.MagicDNSSuffix) || null,
+    nodes
+  };
+}
+
+/**
+ * Probe a list of nodes for open TCP ports in parallel.
+ * Each node's port set defaults to KNOWN_PORTS_PER_NODE[name] || DEFAULT_TS_PORTS,
+ * but a caller can override via portsByNode or a flat overridePorts list.
+ *
+ * @param {Array} nodes - [{name, ip, status, ...}] from getTailscaleNodes()
+ * @param {object} [opts]
+ * @param {Array<number>} [opts.overridePorts] - flat port list applied to every node
+ * @param {object} [opts.portsByNode] - { nodeName: [ports] } per-node override
+ * @param {boolean} [opts.skipOffline=true] - skip nodes whose Tailscale status is 'offline'
+ * @returns {Promise<Array<{name, ip, openPorts}>>}
+ */
+async function scanTailscalePorts(nodes, opts = {}) {
+  const { overridePorts, portsByNode = {}, skipOffline = true } = opts;
+
+  const tasks = nodes.map(async (node) => {
+    if (skipOffline && node.status === 'offline') {
+      return { name: node.name, ip: node.ip, status: node.status, openPorts: [], probedPorts: [] };
+    }
+    if (!node.ip) {
+      return { name: node.name, ip: null, status: node.status, openPorts: [], probedPorts: [] };
+    }
+
+    // Resolve port list: caller override > per-node override > known hint > default.
+    // A *known hint* of `[]` is meaningful — it means "no services expected, skip probe."
+    let portsToProbe;
+    if (overridePorts) portsToProbe = overridePorts;
+    else if (portsByNode[node.name]) portsToProbe = portsByNode[node.name];
+    else if (Object.prototype.hasOwnProperty.call(KNOWN_PORTS_PER_NODE, node.name)) {
+      portsToProbe = KNOWN_PORTS_PER_NODE[node.name];
+    } else portsToProbe = DEFAULT_TS_PORTS;
+
+    if (portsToProbe.length === 0) {
+      return { name: node.name, ip: node.ip, status: node.status, openPorts: [], probedPorts: [] };
+    }
+
+    const probes = await Promise.all(
+      portsToProbe.map(port =>
+        checkPort(node.ip, port).then(open => (open ? port : null))
+      )
+    );
+
+    return {
+      name: node.name,
+      ip: node.ip,
+      status: node.status,
+      probedPorts: portsToProbe,
+      openPorts: probes.filter(p => p !== null)
+    };
+  });
+
+  return Promise.all(tasks);
+}
+
 module.exports = {
   scanNetwork,
   checkPort,
-  SERVICE_SIGNATURES
+  getTailscaleNodes,
+  scanTailscalePorts,
+  SERVICE_SIGNATURES,
+  KNOWN_PORTS_PER_NODE,
+  DEFAULT_TS_PORTS
 };
 
 // CLI mode

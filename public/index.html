@@ -553,39 +553,176 @@ tbody tr:hover td{background:var(--color-surface-offset)}
 <div id="toast-container"></div>
 
 <script>
-// ── Data ──
-let servers = [
-  { id:1,  name:"Hylia Dashboard",    url:"https://eury.ferret-harmonic.ts.net:4444/",                      device:"eury",   port:4444, status:"online",  cat:"web",     ts:true,  uptime:"14d 3h",  latency:"12ms" },
-  { id:2,  name:"AssemblyLook",        url:"http://eury.ferret-harmonic.ts.net:8000/.assemblylook/index.html", device:"eury",   port:8000, status:"online",  cat:"web",     ts:true,  uptime:"3d 7h",   latency:"8ms"  },
-  { id:3,  name:"Larix Service",       url:"http://larix.ferret-harmonic.ts.net:8766/",                      device:"larix",  port:8766, status:"online",  cat:"api",     ts:true,  uptime:"5d 2h",   latency:"45ms" },
-  { id:4,  name:"Jupyter (ilex)",      url:"http://ilex.ferret-harmonic.ts.net:8888/",                       device:"ilex",   port:8888, status:"offline", cat:"jupyter", ts:true,  uptime:"—",       latency:"—"    },
-  { id:5,  name:"Dev API",             url:"http://localhost:3000/",                                          device:"eury",   port:3000, status:"offline", cat:"api",     ts:false, uptime:"—",       latency:"—"    },
-  { id:6,  name:"Tilia Relay",         url:"http://tilia.ferret-harmonic.ts.net:9090/",                      device:"tilia",  port:9090, status:"checking",cat:"custom",  ts:true,  uptime:"1h",      latency:"…"    },
-];
-
-let tsNodes = [
-  { name:"eury",   ip:"100.88.23.103",  os:"linux",   status:"online",  services:["4444","8000","9000","22"], self:true  },
-  { name:"ginkgo", ip:"100.78.108.48",  os:"ios",     status:"idle",    services:["22"],                      self:false },
-  { name:"ilex",   ip:"100.119.147.78", os:"android", status:"idle",    services:["8888"],                    self:false },
-  { name:"iriko",  ip:"100.74.76.22",   os:"ios",     status:"idle",    services:[],                          self:false },
-  { name:"itea",   ip:"100.124.206.58", os:"ios",     status:"offline", services:[],                          self:false },
-  { name:"larix",  ip:"100.124.130.110",os:"android", status:"idle",    services:["8766","22"],               self:false },
-  { name:"tilia",  ip:"100.101.211.92", os:"android", status:"idle",    services:["9090"],                    self:false },
-];
-
-let activity = [
-  { type:"online",  text:"<strong>Hylia Dashboard</strong> came online",             time:"2m ago" },
-  { type:"scan",    text:"Network scan completed — <strong>eury:192.168.7.0/24</strong>",time:"14m ago"},
-  { type:"online",  text:"<strong>AssemblyLook</strong> started on port 8000",        time:"3h ago" },
-  { type:"offline", text:"<strong>Jupyter (ilex)</strong> went offline",              time:"5h ago" },
-  { type:"scan",    text:"Tailscale scan — 6 active nodes found",                     time:"6h ago" },
-  { type:"warn",    text:"<strong>Tilia Relay</strong> latency above threshold",       time:"8h ago" },
-  { type:"online",  text:"<strong>Larix Service</strong> started on port 8766",       time:"1d ago" },
-];
+// ── Live data (filled from API) ──
+let servers   = [];   // discovered services + user-added (localStorage)
+let tsNodes   = [];   // /api/tailscale/nodes
+let activity  = [];   // /api/activity (translated)
+let lastTsScan = [];  // last /api/tailscale/scan results, used to enrich tsNodes.services
 
 let currentFilter = "all";
 let currentSearch = "";
 let currentPage = "dashboard";
+
+// ── Service name + category hints (port → friendly label) ──
+const SERVICE_LABELS = {
+  22:    'SSH',
+  80:    'HTTP',
+  443:   'HTTPS',
+  3000:  'Dev API',
+  4444:  'Hylia Dashboard',
+  8000:  'AssemblyLook',
+  8022:  'Termux SSH',
+  8083:  'Gradio',
+  8765:  'WebSocket',
+  8766:  'Larix Service',
+  8888:  'Jupyter',
+  9000:  'AssemblyNetwork',
+  9090:  'Tilia Relay',
+  10070: 'AssemblyLook Dashboard'
+};
+function serviceName(host, port) {
+  const lbl = SERVICE_LABELS[port];
+  return lbl ? `${lbl} (${host})` : `${host}:${port}`;
+}
+function portCategory(port) {
+  if ([22, 8022].includes(port)) return 'ssh';
+  if ([8888].includes(port)) return 'jupyter';
+  if ([8766, 9090, 3000].includes(port)) return 'api';
+  return 'web';
+}
+
+// ── Fetch helpers ──
+async function fetchJSON(url, opts) {
+  const r = await fetch(url, opts);
+  const j = await r.json();
+  if (!r.ok || j.success === false) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+
+async function loadTailscaleNodes() {
+  try {
+    const j = await fetchJSON('/api/tailscale/nodes');
+    tsNodes = j.nodes.map(n => ({ ...n, services: [] }));
+    // Re-apply last scan results onto nodes
+    for (const r of lastTsScan) {
+      const node = tsNodes.find(n => n.name === r.name);
+      if (node) node.services = r.openPorts.map(String);
+    }
+    document.querySelector('.kpi-card.ts .kpi-val').textContent = tsNodes.length;
+    if (currentPage === 'tailscale') renderTsNodes();
+    return tsNodes;
+  } catch (e) {
+    toast('Tailnet load failed: ' + e.message, 'error');
+    return [];
+  }
+}
+
+async function loadActivity() {
+  try {
+    const j = await fetchJSON('/api/activity?limit=100');
+    activity = (j.activities || []).map(translateActivity);
+    renderDashboardActivity();
+    if (currentPage === 'activity') renderActivity();
+    return activity;
+  } catch (e) {
+    console.warn('Activity load failed:', e.message);
+    return [];
+  }
+}
+
+function translateActivity(a) {
+  const ev = a.eventType || a.event_type || '';
+  const status = a.status || '';
+  let type = 'scan';
+  if (ev.includes('error') || status === 'error') type = 'warn';
+  else if (status === 'online' || ev.endsWith('discovered') || ev === 'server_started') type = 'online';
+  else if (status === 'offline' || ev === 'server_stopped') type = 'offline';
+  else if (ev.includes('scan')) type = 'scan';
+
+  let text;
+  switch (ev) {
+    case 'service_discovered':
+      text = `<strong>${a.service || a.host}</strong> on ${a.host}:${a.port}`; break;
+    case 'tailscale_service_discovered':
+      text = `<strong>${a.host}:${a.port}</strong> reachable on tailnet`; break;
+    case 'scan_started':
+      text = `LAN scan started — ${a.host}`; break;
+    case 'scan_completed':
+      text = `LAN scan completed — ${(a.metadata && a.metadata.servicesFound) || 0} services on ${a.host}`; break;
+    case 'tailscale_scan_started':
+      text = `Tailscale scan started`; break;
+    case 'tailscale_scan_completed': {
+      const m = a.metadata || {};
+      text = `Tailscale scan completed — <strong>${m.totalServices || 0}</strong> services across ${m.nodeCount || 0} nodes`;
+      break;
+    }
+    case 'server_started':
+      text = `<strong>AssemblyNetwork</strong> started on port ${a.port}`; break;
+    case 'server_stopped':
+      text = `<strong>AssemblyNetwork</strong> stopped`; break;
+    case 'port_check':
+      text = `Manual check ${a.host}:${a.port} → ${status}`; break;
+    default:
+      text = `${ev || 'event'} — ${a.host}${a.port && a.port !== 'N/A' ? ':' + a.port : ''}`;
+  }
+  return { type, text, time: timeAgo(a.timestamp) };
+}
+
+function timeAgo(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const sec = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (sec < 0) return 'just now';
+  if (sec < 60) return 'just now';
+  if (sec < 3600) return Math.floor(sec/60) + 'm ago';
+  if (sec < 86400) return Math.floor(sec/3600) + 'h ago';
+  return Math.floor(sec/86400) + 'd ago';
+}
+
+async function loadServers({ withScan = false } = {}) {
+  try {
+    if (withScan) {
+      const j = await fetchJSON('/api/tailscale/scan');
+      lastTsScan = j.results || [];
+    } else {
+      // Use cached scan from /api/services if it has tailscale data; otherwise leave lastTsScan as-is.
+    }
+
+    const userServers = JSON.parse(localStorage.getItem('an_user_servers') || '[]');
+    const discoveredServers = [];
+    let id = 100000;
+    for (const r of lastTsScan) {
+      for (const port of r.openPorts) {
+        discoveredServers.push({
+          id: id++,
+          name: serviceName(r.name, port),
+          url: `http://${r.name}.ferret-harmonic.ts.net:${port}/`,
+          device: r.name,
+          port,
+          status: 'online',
+          cat: portCategory(port),
+          ts: true,
+          uptime: '—',
+          latency: '—',
+          readonly: true
+        });
+      }
+    }
+    servers = [...discoveredServers, ...userServers];
+
+    // Enrich tsNodes with port lists from this scan
+    for (const r of lastTsScan) {
+      const node = tsNodes.find(n => n.name === r.name);
+      if (node) node.services = r.openPorts.map(String);
+    }
+
+    updateKPIs();
+    if (currentPage === 'servers') renderServers();
+    if (currentPage === 'tailscale') renderTsNodes();
+  } catch (e) {
+    toast('Server list load failed: ' + e.message, 'error');
+  }
+}
 
 // ── Nav ──
 function navigate(page) {
@@ -595,9 +732,9 @@ function navigate(page) {
   document.getElementById('nav-'+page).classList.add('active');
   document.getElementById('topbar-breadcrumb').textContent = page.charAt(0).toUpperCase()+page.slice(1);
   currentPage = page;
-  if(page==='servers') renderServers();
-  if(page==='tailscale') renderTsNodes();
-  if(page==='activity') renderActivity();
+  if(page==='servers') { renderServers(); }
+  if(page==='tailscale') { renderTsNodes(); loadTailscaleNodes(); }
+  if(page==='activity') { loadActivity(); }
 }
 
 function toggleSidebar() {
@@ -635,9 +772,10 @@ function renderServers() {
 
 function serverCard(s) {
   const proto = s.url.startsWith('https') ? 'https' : 'http';
-  const statusBtn = s.status==='online'
-    ? `<button class="action-btn stop" onclick="toggleServer(${s.id})"><i data-lucide="square"></i> Stop</button>`
-    : `<button class="action-btn start" onclick="toggleServer(${s.id})"><i data-lucide="play"></i> Start</button>`;
+  const checkBtn = `<button class="action-btn" onclick="toggleServer(${s.id})"><i data-lucide="refresh-cw"></i> Recheck</button>`;
+  const trashBtn = s.readonly
+    ? ''
+    : `<button class="action-btn" onclick="removeServer(${s.id})"><i data-lucide="trash-2"></i></button>`;
   return `<div class="server-card" id="scard-${s.id}">
     <div class="server-card-header">
       <div class="server-icon ${s.status}"><i data-lucide="${iconFor(s.cat)}"></i></div>
@@ -651,20 +789,21 @@ function serverCard(s) {
     </div>
     <div class="server-body">
       <div class="server-tags">
-        ${s.ts ? '<span class="tag ts">tailscale</span>':''} 
+        ${s.ts ? '<span class="tag ts">tailscale</span>':''}
         ${proto==='https'?'<span class="tag https">https</span>':''}
         <span class="tag">${s.device}</span>
         <span class="tag">:${s.port}</span>
+        ${s.readonly ? '<span class="tag">discovered</span>' : '<span class="tag">user</span>'}
       </div>
       <div class="server-info-row">
-        <div class="server-info-item"><div class="info-label">Uptime</div><div class="info-val">${s.uptime}</div></div>
-        <div class="server-info-item"><div class="info-label">Latency</div><div class="info-val">${s.latency}</div></div>
+        <div class="server-info-item"><div class="info-label">Device</div><div class="info-val">${s.device}</div></div>
         <div class="server-info-item"><div class="info-label">Port</div><div class="info-val">${s.port}</div></div>
+        <div class="server-info-item"><div class="info-label">Status</div><div class="info-val">${s.status}</div></div>
       </div>
       <div class="server-actions">
         <a class="action-btn open" href="${s.url}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link"></i> Open</a>
-        ${statusBtn}
-        <button class="action-btn" onclick="removeServer(${s.id})"><i data-lucide="trash-2"></i></button>
+        ${checkBtn}
+        ${trashBtn}
       </div>
     </div>
   </div>`;
@@ -685,47 +824,72 @@ function setFilter(btn, val) {
   renderServers();
 }
 
-function toggleServer(id) {
+async function toggleServer(id) {
   const s = servers.find(x=>x.id===id);
   if(!s) return;
-  const prev = s.status;
-  s.status = s.status==='online'?'offline':'online';
-  s.uptime = s.status==='online'?'0m':'—';
-  s.latency = s.status==='online'?'—':'—';
-  activity.unshift({type:s.status, text:`<strong>${s.name}</strong> ${s.status==='online'?'started':'stopped'} manually`, time:'just now'});
-  renderServers(); updateKPIs();
-  renderDashboardActivity();
-  toast(s.status==='online'?`${s.name} started`:`${s.name} stopped`, s.status==='online'?'success':'info');
+  toast(`Checking ${s.name}…`,'info');
+  try {
+    const host = s.ts ? `${s.device}.ferret-harmonic.ts.net` : (s.url.match(/\/\/([^:/]+)/) || [])[1] || s.device;
+    const j = await fetchJSON('/api/check', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ host, port: s.port })
+    });
+    s.status = j.status;
+    renderServers(); updateKPIs();
+    toast(`${s.name}: ${j.status}`, j.status === 'online' ? 'success' : 'info');
+  } catch (e) {
+    toast('Check failed: ' + e.message, 'error');
+  }
 }
 
 function removeServer(id) {
-  servers = servers.filter(s=>s.id!==id);
-  renderServers(); updateKPIs();
+  const stored = JSON.parse(localStorage.getItem('an_user_servers') || '[]');
+  const updated = stored.filter(s => s.id !== id);
+  localStorage.setItem('an_user_servers', JSON.stringify(updated));
+  loadServers();
   toast('Server removed','info');
 }
 
 // ── Tailscale ──
 function renderTsNodes() {
   const tbody = document.getElementById('ts-nodes-tbody');
+  if (!tsNodes.length) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><i data-lucide="network"></i><h3>Loading tailnet…</h3><p>Run <code>tailscale status</code> on the host or click Re-scan.</p></div></td></tr>';
+    lucide.createIcons(); return;
+  }
   tbody.innerHTML = tsNodes.map(n=>{
-    const statusClass = n.status==='online'?'ts-status-online':n.status==='idle'?'ts-status-idle':'ts-status-offline';
+    const statusClass = n.status==='online'?'ts-status-online':n.status==='offline'?'ts-status-offline':'ts-status-idle';
     const osIcon = {linux:'terminal',ios:'smartphone',android:'tablet-smartphone'}[n.os]||'monitor';
-    const servLinks = n.services.length ? n.services.map(p=>`<a class="link-btn" href="http://${n.ip}:${p}/" target="_blank" rel="noopener noreferrer">:${p}</a>`).join(' ') : '<span style="color:var(--color-text-faint);font-size:10px">—</span>';
+    const host = n.dns || n.ip;
+    const servLinks = (n.services && n.services.length)
+      ? n.services.map(p=>`<a class="link-btn" href="http://${host}:${p}/" target="_blank" rel="noopener noreferrer">:${p}</a>`).join(' ')
+      : '<span style="color:var(--color-text-faint);font-size:10px">—</span>';
     return `<tr>
       <td><div class="td-node"><div class="node-icon"><i data-lucide="${osIcon}"></i></div><span class="node-name">${n.name}${n.self?' <span style="font-size:9px;color:var(--color-primary)">(this)</span>':''}</span></div></td>
-      <td><span class="ip-code">${n.ip}</span></td>
+      <td><span class="ip-code">${n.ip||'—'}</span></td>
       <td><span class="os-badge"><i data-lucide="${osIcon}" style="width:10px;height:10px"></i>${n.os}</span></td>
       <td><span class="${statusClass}">${n.status}</span></td>
       <td>${servLinks}</td>
-      <td><a class="link-btn" href="http://${n.ip}/" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link" style="width:10px;height:10px"></i> Visit</a></td>
+      <td><a class="link-btn" href="http://${host}/" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link" style="width:10px;height:10px"></i> Visit</a></td>
     </tr>`;
   }).join('');
   lucide.createIcons();
 }
 
-function scanTailscale() {
-  toast('Scanning tailscale nodes…','info');
-  setTimeout(()=>{ toast('Scan complete — 6 active nodes','success'); },2000);
+async function scanTailscale() {
+  toast('Scanning tailnet…','info');
+  try {
+    const j = await fetchJSON('/api/tailscale/scan');
+    lastTsScan = j.results || [];
+    await loadTailscaleNodes();
+    await loadServers();
+    await loadActivity();
+    const total = lastTsScan.reduce((s, x) => s + x.openPorts.length, 0);
+    toast(`Tailnet scan complete — ${total} services across ${j.nodeCount} nodes`,'success');
+  } catch (e) {
+    toast('Tailnet scan failed: ' + e.message, 'error');
+  }
 }
 
 // ── Activity ──
@@ -744,22 +908,32 @@ function actItem(a) {
     <div class="activity-time">${a.time}</div>
   </div>`;
 }
-function clearActivity(){ activity=[]; renderActivity(); toast('Activity cleared','info'); }
+function clearActivity(){
+  // No backend delete route; just clear the local view. Server log persists.
+  activity = []; renderActivity(); renderDashboardActivity();
+  toast('Activity view cleared (server log preserved)','info');
+}
 
 // ── Scan ──
-function triggerScan() {
+async function triggerScan() {
   const btn = document.getElementById('scan-btn');
   const lbl = document.getElementById('scan-label');
   btn.style.opacity='.6'; btn.style.pointerEvents='none'; lbl.textContent='Scanning…';
-  setTimeout(()=>{
+  try {
+    // Tailscale scan only (LAN scan via nmap is slow; user can opt in via Settings later).
+    const j = await fetchJSON('/api/tailscale/scan');
+    lastTsScan = j.results || [];
+    document.getElementById('kpi-scan-time').textContent = new Date().toLocaleTimeString();
+    await loadTailscaleNodes();
+    await loadServers();
+    await loadActivity();
+    const total = lastTsScan.reduce((s, x) => s + x.openPorts.length, 0);
+    toast(`Scan complete — ${total} services across ${j.nodeCount} nodes`,'success');
+  } catch (e) {
+    toast('Scan failed: ' + e.message, 'error');
+  } finally {
     btn.style.opacity=''; btn.style.pointerEvents=''; lbl.textContent='Scan';
-    const now = new Date().toLocaleTimeString();
-    document.getElementById('kpi-scan-time').textContent = now;
-    activity.unshift({type:'scan',text:'Network scan completed on 100.64.0.0/10',time:'just now'});
-    renderDashboardActivity();
-    if(currentPage==='activity') renderActivity();
-    toast('Scan complete','success');
-  }, 2500);
+  }
 }
 
 // ── Modal ──
@@ -773,12 +947,12 @@ function addServer(){
   if(!name||!url){toast('Name and URL required','error');return;}
   const port = parseInt((url.match(/:(\d+)/)||[])[1]||80);
   const ts = url.includes('ferret-harmonic.ts.net');
-  servers.push({id:Date.now(),name,url,device:dev,port,status:'checking',cat,ts,uptime:'—',latency:'—'});
-  activity.unshift({type:'online',text:`<strong>${name}</strong> added`,time:'just now'});
+  const stored = JSON.parse(localStorage.getItem('an_user_servers') || '[]');
+  stored.push({id:Date.now(),name,url,device:dev,port,status:'checking',cat,ts,uptime:'—',latency:'—',readonly:false});
+  localStorage.setItem('an_user_servers', JSON.stringify(stored));
   closeAddModal();
-  updateKPIs(); renderDashboardActivity();
-  if(currentPage==='servers') renderServers();
-  toast(`${name} added`,'success');
+  loadServers();
+  toast(`${name} added (saved locally)`,'success');
   document.getElementById('new-name').value='';
   document.getElementById('new-url').value='';
 }
@@ -821,9 +995,17 @@ function checkMobile(){
 window.addEventListener('resize',checkMobile); checkMobile();
 
 // ── Init ──
-updateKPIs();
-renderDashboardActivity();
-lucide.createIcons();
+async function bootstrap() {
+  updateKPIs();
+  lucide.createIcons();
+  // 1. Get nodes immediately (fast).
+  await loadTailscaleNodes();
+  // 2. Load activity from backend.
+  await loadActivity();
+  // 3. Run a tailnet scan in the background to populate services + KPIs.
+  triggerScan();
+}
+bootstrap();
 </script>
 </body>
 </html>

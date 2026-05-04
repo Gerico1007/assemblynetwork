@@ -6,7 +6,7 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
-const { scanNetwork, checkPort } = require('./scanner');
+const { scanNetwork, checkPort, getTailscaleNodes, scanTailscalePorts } = require('./scanner');
 const { logActivity, getActivityLog, getActivityByDate } = require('./activity-logger');
 
 const app = express();
@@ -19,6 +19,12 @@ app.use(express.static('public'));
 // In-memory cache for discovered services
 let discoveredServices = [];
 let lastScanTime = null;
+
+// Tailscale caches
+let tsNodesCache = null;
+let tsNodesCacheTime = null;
+let tsScanCache = null;
+let tsScanTime = null;
 
 /**
  * GET /
@@ -196,6 +202,120 @@ app.post('/api/check', async (req, res) => {
 });
 
 /**
+ * GET /api/tailscale/nodes
+ * Live list of devices on the tailnet via `tailscale status --json`.
+ * Returns { self, tailnet, nodes: [{name, dns, ip, os, status, lastSeen, self}] }.
+ */
+app.get('/api/tailscale/nodes', async (req, res) => {
+  try {
+    const data = await getTailscaleNodes();
+    tsNodesCache = data;
+    tsNodesCacheTime = new Date().toISOString();
+
+    res.json({
+      success: true,
+      cachedAt: tsNodesCacheTime,
+      ...data
+    });
+  } catch (error) {
+    console.error('Tailscale nodes error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      hint: 'Is the tailscale CLI installed and is the tailnet up? Try `tailscale status --json` on the host.'
+    });
+  }
+});
+
+/**
+ * GET /api/tailscale/scan
+ * Probes each tailnet peer for open ports.
+ * Query params:
+ *   ports=22,80,...   override port list (applied to every node)
+ *   nodes=larix,ilex  limit scope to specific nodes
+ */
+app.get('/api/tailscale/scan', async (req, res) => {
+  try {
+    const { nodes: liveNodes } = await getTailscaleNodes();
+
+    let target = liveNodes;
+    if (req.query.nodes) {
+      const wanted = req.query.nodes.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      target = liveNodes.filter(n => wanted.includes(n.name.toLowerCase()));
+    }
+
+    const overridePorts = req.query.ports
+      ? req.query.ports.split(',').map(p => parseInt(p, 10)).filter(p => Number.isFinite(p))
+      : null;
+
+    console.log(`🔍 Tailscale scan: ${target.length} node(s)${overridePorts ? ` with override ports [${overridePorts.join(',')}]` : ' using per-node hints'}`);
+
+    await logActivity({
+      eventType: 'tailscale_scan_started',
+      host: 'tailnet',
+      port: 'N/A',
+      service: 'Tailscale Scanner',
+      status: 'in_progress',
+      metadata: { nodeCount: target.length, override: !!overridePorts }
+    });
+
+    const results = await scanTailscalePorts(target, { overridePorts });
+
+    tsScanCache = results;
+    tsScanTime = new Date().toISOString();
+
+    for (const r of results) {
+      for (const port of r.openPorts) {
+        await logActivity({
+          eventType: 'tailscale_service_discovered',
+          host: r.name,
+          port: port.toString(),
+          service: `${r.name}:${port}`,
+          status: 'online',
+          metadata: { ip: r.ip, scanTime: tsScanTime }
+        });
+      }
+    }
+
+    await logActivity({
+      eventType: 'tailscale_scan_completed',
+      host: 'tailnet',
+      port: 'N/A',
+      service: 'Tailscale Scanner',
+      status: 'success',
+      metadata: {
+        nodeCount: target.length,
+        totalServices: results.reduce((sum, r) => sum + r.openPorts.length, 0),
+        scanTime: tsScanTime
+      }
+    });
+
+    res.json({
+      success: true,
+      scanTime: tsScanTime,
+      nodeCount: target.length,
+      results
+    });
+  } catch (error) {
+    console.error('Tailscale scan error:', error);
+
+    await logActivity({
+      eventType: 'tailscale_scan_error',
+      host: 'tailnet',
+      port: 'N/A',
+      service: 'Tailscale Scanner',
+      status: 'error',
+      metadata: { error: error.message }
+    });
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
  * GET /api/status
  * Get server status and configuration
  */
@@ -228,11 +348,13 @@ app.listen(PORT, '0.0.0.0', () => {
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 API Endpoints:
-  GET  /api/scan      - Trigger network scan
-  GET  /api/services  - Get discovered services
-  GET  /api/activity  - Get activity log
-  POST /api/check     - Check specific port
-  GET  /api/status    - Server status
+  GET  /api/scan              - Trigger LAN network scan
+  GET  /api/services          - Get discovered LAN services
+  GET  /api/tailscale/nodes   - List tailnet devices
+  GET  /api/tailscale/scan    - Probe tailnet peers for open ports
+  GET  /api/activity          - Get activity log
+  POST /api/check             - Check specific port
+  GET  /api/status            - Server status
 
 Ready to discover your network! 🚀
   `);
