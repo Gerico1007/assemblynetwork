@@ -6,12 +6,13 @@ A Trinity-powered network monitoring solution that discovers services across you
 
 ## 🎯 Features
 
-- **🔍 Network Scanning**: Automatically discover active services on your local network (192.168.7.0/24)
-- **📊 Activity Logging**: Track every network event with ISO 8601 timestamps
-- **🎨 Trinity Dashboard**: Beautiful dark-themed UI with color-coded status indicators
-- **💾 Redis Storage**: Persistent activity logs using Upstash Redis
-- **🔗 Quick Links**: Easy navigation to all your existing services
-- **📱 Responsive Design**: Works seamlessly on desktop and mobile
+- **🔍 Network Scanning**: LAN (nmap) and Tailscale-aware service discovery, in parallel
+- **🔗 Paste-a-Link**: Paste any service URL — the dashboard parses it and saves a card that survives restarts (`#4`)
+- **🏷️ Service Categories**: SSH / Web / Forest / Agent / Database / Dev / Unknown — auto-inferred from port + name + protocol, filterable by chip (`#5`)
+- **🖥️ Terminal Bridges**: ttyd profiles per service. Readonly (watch the room) vs Interactive (touch the instruments). Single-use vs Persistent. Bound to `tailscale0` only (`#6 #7 #8`)
+- **📊 Activity Logging**: Every event with ISO 8601 timestamps, optionally backed by Upstash Redis
+- **🎨 Assembly Dashboard**: Dark-themed UI with color-coded status indicators
+- **📱 Responsive Design**: Works on desktop and mobile
 
 ## 🚀 Quick Start
 
@@ -42,13 +43,33 @@ The dashboard will be available at: **http://localhost:9000**
 
 ## 📡 API Endpoints
 
+### Discovery & status
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/scan` | GET | Trigger network scan |
-| `/api/services` | GET | Get discovered services |
+| `/api/scan` | GET | Trigger LAN nmap scan |
+| `/api/services` | GET | Get discovered LAN services |
+| `/api/tailscale/nodes` | GET | List tailnet devices |
+| `/api/tailscale/scan` | GET | Probe tailnet peers for open ports (returns `portCategories` per node) |
 | `/api/activity` | GET | Get activity log |
 | `/api/check` | POST | Check specific host:port |
 | `/api/status` | GET | Server status |
+
+### Custom services (`#4`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/services/custom` | GET | List user-pasted services |
+| `/api/services/custom` | POST | Add a service from a URL — body: `{url, name?, category?}` |
+| `/api/services/custom/:id` | DELETE | Remove a custom service |
+
+### Terminal bridges (`#6 #7 #8`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/terminal/services` | GET | List bridge profiles + runtime status |
+| `/api/terminal/status/:id` | GET | Status for a single profile |
+| `/api/terminal/start/:id` | POST | Spawn ttyd from a profile |
+| `/api/terminal/stop/:id` | POST | SIGTERM (escalates to SIGKILL after 3s) |
+| `/api/terminal/restart/:id` | POST | Stop + start |
+| `/api/terminal/rotate/:id` | POST | Generate a new password and restart |
 
 ### Examples
 
@@ -56,16 +77,17 @@ The dashboard will be available at: **http://localhost:9000**
 # Scan network
 curl http://localhost:9000/api/scan
 
-# Get services
-curl http://localhost:9000/api/services
-
-# Get activity log (last 50 events)
-curl http://localhost:9000/api/activity?limit=50
-
-# Check specific port
-curl -X POST http://localhost:9000/api/check \
+# Paste a service URL — saves persistently, infers category
+curl -X POST http://localhost:9000/api/services/custom \
   -H "Content-Type: application/json" \
-  -d '{"host": "192.168.7.241", "port": 8000}'
+  -d '{"url":"https://eury.ferret-harmonic.ts.net:8770/","name":"Conductor"}'
+
+# Start a terminal bridge (must be defined in data/terminal-services.json)
+curl -X POST http://localhost:9000/api/terminal/start/assemblynetwork
+
+# Check who is listening
+ss -tlnp | grep ttyd
+# expect: LISTEN ... 100.88.23.103:7683 ... users:(("ttyd",...))   # tailscale0 only
 ```
 
 ## 🏗️ Architecture
@@ -74,15 +96,23 @@ curl -X POST http://localhost:9000/api/check \
 
 ```
 assemblynetwork/
-├── server.js           # Express server (port 9000)
-├── scanner.js          # Network scanning module (nmap)
-├── activity-logger.js  # Upstash Redis integration
-├── package.json        # Dependencies
-├── .env                # Configuration
-└── public/             # Frontend dashboard
-    ├── index.html      # Dashboard UI
-    ├── styles.css      # Trinity-themed styling
-    └── app.js          # Client-side JavaScript
+├── server.js               # Express server (port 9000)
+├── scanner.js              # nmap LAN + tailnet probe
+├── categories.js           # inferCategory() — single source of truth
+├── services-store.js       # Persistent custom-service store (#4)
+├── terminal-services.js    # ttyd bridge launcher (#6 #7 #8)
+├── activity-logger.js      # Upstash Redis integration
+├── data/
+│   ├── terminal-services.json   # Terminal launch profiles (committed)
+│   ├── terminal-runtime.json    # Generated passwords (gitignored)
+│   └── custom-services.json     # User-pasted services (gitignored)
+├── docs/
+│   ├── ENHANCEMENTS.md
+│   ├── TERMINAL-BRIDGE.md
+│   ├── SECURITY.md
+│   ├── enhancements/2026-05-04-overnight-plan.md
+│   └── validation/              # Smoke-test transcripts
+└── public/index.html
 ```
 
 ### 🌿 Aureon - Service Flow
