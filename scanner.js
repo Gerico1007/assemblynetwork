@@ -143,13 +143,13 @@ async function checkPort(host, port) {
  * Empty array = use DEFAULT_TS_PORTS instead.
  */
 const KNOWN_PORTS_PER_NODE = {
-  eury:   [22, 4444, 8000, 8083, 8765, 9000, 10070],
+  eury:   [22, 4444, 8000, 8083, 8765, 8888, 9000, 10070],
   ginkgo: [22],
-  ilex:   [8022, 8888],
+  ilex:   [8022, 8766, 8768],
   iriko:  [],
   itea:   [],
   larix:  [8022, 8766],
-  tilia:  [8022, 9090]
+  tilia:  [8022, 8766, 8768]
 };
 
 /**
