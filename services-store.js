@@ -14,6 +14,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { inferCategory } = require('./categories');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const STORE_PATH = path.join(DATA_DIR, 'custom-services.json');
@@ -93,20 +94,28 @@ function addService({ url, name, category }) {
       ...services[idx],
       ...fields,
       name: name || services[idx].name || `${fields.device}:${fields.port}`,
-      category: category || services[idx].category,
       source: 'user',
       updatedAt: now
     };
+    // Explicit category from request beats stored; otherwise re-infer from final shape.
+    merged.category = category
+      || services[idx].category
+      || inferCategory({ port: merged.port, protocol: merged.protocol, name: merged.name });
     services[idx] = merged;
     writeAll(services);
     return merged;
   }
 
+  const finalName = name || `${fields.device}:${fields.port}`;
   const record = {
     id: crypto.randomUUID(),
-    name: name || `${fields.device}:${fields.port}`,
+    name: finalName,
     ...fields,
-    category: category || null,
+    category: category || inferCategory({
+      port: fields.port,
+      protocol: fields.protocol,
+      name: finalName
+    }),
     source: 'user',
     createdAt: now,
     lastSeen: null

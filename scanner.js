@@ -6,6 +6,7 @@
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
+const { inferCategory } = require('./categories');
 
 // Common port-to-service mapping
 const SERVICE_SIGNATURES = {
@@ -89,11 +90,13 @@ async function scanNetwork(subnet = '192.168.7.0/24', customPorts = null) {
           .filter(p => p.includes('open'))
           .map(p => {
             const port = p.split('/')[0];
+            const service = SERVICE_SIGNATURES[port] || 'Unknown';
             return {
               host,
               port,
-              service: SERVICE_SIGNATURES[port] || 'Unknown',
+              service,
               status: 'online',
+              category: inferCategory({ port, name: service }),
               lastSeen: new Date().toISOString()
             };
           });
@@ -240,12 +243,18 @@ async function scanTailscalePorts(nodes, opts = {}) {
       )
     );
 
+    const openPorts = probes.filter(p => p !== null);
+    const portCategories = Object.fromEntries(
+      openPorts.map(port => [port, inferCategory({ port })])
+    );
+
     return {
       name: node.name,
       ip: node.ip,
       status: node.status,
       probedPorts: portsToProbe,
-      openPorts: probes.filter(p => p !== null)
+      openPorts,
+      portCategories
     };
   });
 

@@ -434,6 +434,14 @@ tbody tr:hover td{background:var(--color-surface-offset)}
         <button class="filter-chip" data-filter="online" onclick="setFilter(this,'online')">Online</button>
         <button class="filter-chip" data-filter="offline" onclick="setFilter(this,'offline')">Offline</button>
         <button class="filter-chip" data-filter="tailscale" onclick="setFilter(this,'tailscale')">Tailscale</button>
+        <span style="width:1px;height:18px;background:var(--color-border);margin:0 4px"></span>
+        <button class="filter-chip" data-filter="cat:ssh"      onclick="setFilter(this,'cat:ssh')">SSH</button>
+        <button class="filter-chip" data-filter="cat:web"      onclick="setFilter(this,'cat:web')">Web</button>
+        <button class="filter-chip" data-filter="cat:forest"   onclick="setFilter(this,'cat:forest')">Forest</button>
+        <button class="filter-chip" data-filter="cat:agent"    onclick="setFilter(this,'cat:agent')">Agents</button>
+        <button class="filter-chip" data-filter="cat:database" onclick="setFilter(this,'cat:database')">DB</button>
+        <button class="filter-chip" data-filter="cat:dev"      onclick="setFilter(this,'cat:dev')">Dev</button>
+        <button class="filter-chip" data-filter="cat:unknown"  onclick="setFilter(this,'cat:unknown')">Unknown</button>
       </div>
       <div class="paste-link-bar" style="display:flex;gap:var(--space-2);margin-bottom:var(--space-3);align-items:center">
         <i data-lucide="link" style="width:14px;height:14px;color:var(--color-text-muted)"></i>
@@ -593,12 +601,25 @@ function serviceName(host, port) {
   const lbl = SERVICE_LABELS[port];
   return lbl ? `${lbl} (${host})` : `${host}:${port}`;
 }
-function portCategory(port) {
-  if ([22, 8022].includes(port)) return 'ssh';
-  if ([8888].includes(port)) return 'jupyter';
-  if ([8766, 9090, 3000].includes(port)) return 'api';
-  return 'web';
+// Mirror of categories.js — kept in sync with the backend rules so the UI can
+// label services even before the first scan response arrives. Backend wins
+// when it includes a category in the payload.
+function portCategory(port, opts = {}) {
+  const { protocol, name } = opts;
+  if (name && /\b(hermes|claude|gemini|codex|agent|a2a)\b/i.test(name)) return 'agent';
+  const p = Number(port);
+  if ([22, 8022].includes(p)) return 'ssh';
+  if ([8766, 8768, 8770].includes(p)) return 'forest';
+  if ([3306, 5432, 6379, 27017].includes(p)) return 'database';
+  if ([3000, 5173, 8000, 8080, 8083, 8888, 9000].includes(p)) return 'dev';
+  if (protocol === 'http' || protocol === 'https') return 'web';
+  return 'unknown';
 }
+
+const CATEGORY_LABELS = {
+  ssh: 'SSH', web: 'Web', forest: 'Forest', agent: 'Agent',
+  database: 'Database', dev: 'Dev', unknown: 'Unknown'
+};
 
 // ── Fetch helpers ──
 async function fetchJSON(url, opts) {
@@ -727,14 +748,19 @@ async function loadServers({ withScan = false } = {}) {
     let id = 100000;
     for (const r of lastTsScan) {
       for (const port of r.openPorts) {
+        const name = serviceName(r.name, port);
+        // Backend includes portCategories on the scan result (E2); fall back to
+        // local inference if missing for compatibility with cached responses.
+        const cat = (r.portCategories && r.portCategories[port])
+          || portCategory(port, { name });
         discoveredServers.push({
           id: id++,
-          name: serviceName(r.name, port),
+          name,
           url: `http://${r.name}.ferret-harmonic.ts.net:${port}/`,
           device: r.name,
           port,
           status: 'online',
-          cat: portCategory(port),
+          cat,
           ts: true,
           uptime: '—',
           latency: '—',
@@ -802,6 +828,10 @@ function renderServers() {
     if(currentFilter==='online' && s.status!=='online') return false;
     if(currentFilter==='offline' && s.status!=='offline') return false;
     if(currentFilter==='tailscale' && !s.ts) return false;
+    if(currentFilter && currentFilter.startsWith('cat:')) {
+      const wanted = currentFilter.slice(4);
+      if ((s.cat || 'unknown') !== wanted) return false;
+    }
     if(currentSearch && !s.name.toLowerCase().includes(currentSearch) && !s.device.toLowerCase().includes(currentSearch)) return false;
     return true;
   });
@@ -832,6 +862,7 @@ function serverCard(s) {
     </div>
     <div class="server-body">
       <div class="server-tags">
+        ${s.cat ? `<span class="tag" title="category">${(CATEGORY_LABELS[s.cat]||s.cat).toLowerCase()}</span>` : ''}
         ${s.ts ? '<span class="tag ts">tailscale</span>':''}
         ${proto==='https'?'<span class="tag https">https</span>':''}
         <span class="tag">${s.device}</span>
@@ -853,7 +884,15 @@ function serverCard(s) {
 }
 
 function iconFor(cat){
-  return {web:'globe',api:'cpu',jupyter:'book-open',ssh:'terminal',custom:'box'}[cat]||'server';
+  return {
+    web:'globe',
+    forest:'trees',
+    agent:'bot',
+    ssh:'terminal',
+    database:'database',
+    dev:'code',
+    unknown:'help-circle'
+  }[cat] || 'server';
 }
 
 function filterServers() {
