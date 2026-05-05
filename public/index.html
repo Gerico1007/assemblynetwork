@@ -345,6 +345,9 @@ tbody tr:hover td{background:var(--color-surface-offset)}
     <a class="nav-item" onclick="navigate('tailscale')" id="nav-tailscale">
       <i data-lucide="network"></i><span>Tailscale</span>
     </a>
+    <a class="nav-item" onclick="navigate('terminals')" id="nav-terminals">
+      <i data-lucide="terminal"></i><span>Terminals</span>
+    </a>
   </div>
 
   <div class="sidebar-section">
@@ -474,6 +477,20 @@ tbody tr:hover td{background:var(--color-surface-offset)}
           <tbody id="ts-nodes-tbody"></tbody>
         </table>
       </div>
+    </section>
+
+    <!-- TERMINALS PAGE (E3/E4/E5: ttyd bridge) -->
+    <section class="page" id="page-terminals">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Terminal Bridges</div>
+          <div class="section-sub">ttyd profiles — readonly = watch the room · interactive = touch the instruments</div>
+        </div>
+        <button class="scan-btn" style="font-size:var(--text-xs)" onclick="loadTerminals()">
+          <i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Refresh
+        </button>
+      </div>
+      <div class="servers-grid" id="terminals-grid"></div>
     </section>
 
     <!-- ACTIVITY PAGE -->
@@ -803,6 +820,7 @@ function navigate(page) {
   currentPage = page;
   if(page==='servers') { renderServers(); }
   if(page==='tailscale') { renderTsNodes(); loadTailscaleNodes(); }
+  if(page==='terminals') { loadTerminals(); }
   if(page==='activity') { loadActivity(); }
 }
 
@@ -944,6 +962,88 @@ async function removeServer(id) {
   localStorage.setItem('an_user_servers', JSON.stringify(updated));
   loadServers();
   toast('Server removed','info');
+}
+
+// ── Terminals (E3/E4/E5: ttyd bridge) ──
+let terminals = [];
+
+async function loadTerminals() {
+  try {
+    const j = await fetchJSON('/api/terminal/services');
+    terminals = j.services || [];
+    renderTerminals();
+  } catch (e) {
+    toast('Terminals load failed: ' + e.message, 'error');
+  }
+}
+
+function renderTerminals() {
+  const grid = document.getElementById('terminals-grid');
+  if (!terminals.length) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i data-lucide="terminal"></i><h3>No terminal profiles configured</h3><p>Add profiles to <code>data/terminal-services.json</code>.</p></div>';
+    lucide.createIcons(); return;
+  }
+  grid.innerHTML = terminals.map(t => terminalCard(t)).join('');
+  lucide.createIcons();
+}
+
+function terminalCard(t) {
+  const running = t.status === 'running';
+  const modeLabel = t.terminalMode === 'interactive' ? 'Interactive' : 'Readonly';
+  const lifeLabel = t.lifecycle === 'persistent' ? 'Persistent' : 'Single-use';
+  const modeIcon  = t.terminalMode === 'interactive' ? 'edit-3' : 'eye';
+  const persistentBadge = t.lifecycle === 'persistent'
+    ? '<span class="tag" style="background:#7c2d12;color:#fed7aa" title="stays running until stopped">persistent</span>'
+    : '<span class="tag">single-use</span>';
+  const passwordView = (running && t.password)
+    ? `<div class="server-info-item"><div class="info-label">Password</div><div class="info-val" style="font-family:monospace;font-size:11px">${t.password}</div></div>`
+    : '';
+  const dot = running ? 'online' : (t.status==='crashed' ? 'offline' : 'offline');
+  return `<div class="server-card" id="tcard-${t.id}">
+    <div class="server-card-header">
+      <div class="server-icon ${dot}"><i data-lucide="${modeIcon}"></i></div>
+      <div class="server-meta">
+        <div class="server-name">${t.name}</div>
+        <div class="server-url">${t.url}</div>
+      </div>
+      <div class="server-status ${dot}">
+        <div class="status-dot ${dot}"></div>${t.status}
+      </div>
+    </div>
+    <div class="server-body">
+      <div class="server-tags">
+        <span class="tag">${modeLabel.toLowerCase()}</span>
+        ${persistentBadge}
+        <span class="tag">${t.bindInterface}</span>
+        <span class="tag">:${t.port}</span>
+        <span class="tag">${t.authUser}</span>
+      </div>
+      <div class="server-info-row">
+        <div class="server-info-item"><div class="info-label">Folder</div><div class="info-val" style="font-size:11px;word-break:break-all">${t.cwd}</div></div>
+        <div class="server-info-item"><div class="info-label">PID</div><div class="info-val">${t.pid || '—'}</div></div>
+        ${passwordView}
+      </div>
+      <div class="server-actions">
+        ${running
+          ? `<a class="action-btn open" href="${t.url}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link"></i> Open</a>
+             <button class="action-btn" onclick="terminalAction('${t.id}','stop')"><i data-lucide="square"></i> Stop</button>
+             <button class="action-btn" onclick="terminalAction('${t.id}','restart')"><i data-lucide="rotate-ccw"></i> Restart</button>
+             <button class="action-btn" onclick="terminalAction('${t.id}','rotate')"><i data-lucide="key"></i> Rotate</button>`
+          : `<button class="action-btn open" onclick="terminalAction('${t.id}','start')"><i data-lucide="play"></i> Start</button>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+async function terminalAction(id, action) {
+  const t = terminals.find(x => x.id === id);
+  toast(`${action} ${t ? t.name : id}…`, 'info');
+  try {
+    await fetchJSON(`/api/terminal/${action}/${encodeURIComponent(id)}`, { method: 'POST' });
+    setTimeout(loadTerminals, 600);
+  } catch (e) {
+    toast(`${action} failed: ${e.message}`, 'error');
+  }
 }
 
 // Paste-a-link: parse a URL on the backend and store it persistently.

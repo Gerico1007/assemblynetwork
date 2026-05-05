@@ -1,0 +1,73 @@
+{
+  "_doc": "Terminal launch profiles for the ttyd bridge. Edit ports/cwd/mode to taste. The 'host' field is what the dashboard URL will point to (typically the Tailscale DNS name of the device running this dashboard). bindInterface controls what NIC ttyd listens on — keep it 'tailscale0' in production. APPROVED_ROOTS in terminal-services.js gates which cwds are allowed; widen there if you need new directories. See docs/TERMINAL-BRIDGE.md.",
+  "terminalServices": [
+    {
+      "id": "assemblynetwork",
+      "name": "AssemblyNetwork Dev Terminal",
+      "device": "eury",
+      "host": "eury.ferret-harmonic.ts.net",
+      "protocol": "http",
+      "port": 7683,
+      "category": "dev",
+      "bridge": "ttyd",
+      "terminalMode": "interactive",
+      "lifecycle": "persistent",
+      "cwd": "/home/gmusic/workspace/assemblynetwork",
+      "command": "bash",
+      "authUser": "mia",
+      "bindInterface": "tailscale0",
+      "maxClients": 1
+    },
+    {
+      "id": "hermes",
+      "name": "Hermes Skills Terminal",
+      "device": "eury",
+      "host": "eury.ferret-harmonic.ts.net",
+      "protocol": "http",
+      "port": 7681,
+      "category": "agent",
+      "bridge": "ttyd",
+      "terminalMode": "readonly",
+      "lifecycle": "single-use",
+      "cwd": "/home/gmusic/.hermes",
+      "command": "bash",
+      "authUser": "mia",
+      "bindInterface": "tailscale0",
+      "maxClients": 1
+    },
+    {
+      "id": "forest",
+      "name": "Forest of Gerico Terminal",
+      "device": "eury",
+      "host": "eury.ferret-harmonic.ts.net",
+      "protocol": "http",
+      "port": 7682,
+      "category": "dev",
+      "bridge": "ttyd",
+      "terminalMode": "interactive",
+      "lifecycle": "persistent",
+      "cwd": "/home/gmusic/salix/repos",
+      "command": "bash",
+      "authUser": "mia",
+      "bindInterface": "tailscale0",
+      "maxClients": 1
+    },
+    {
+      "id": "claude",
+      "name": "Claude Agent Terminal",
+      "device": "eury",
+      "host": "eury.ferret-harmonic.ts.net",
+      "protocol": "http",
+      "port": 7684,
+      "category": "agent",
+      "bridge": "ttyd",
+      "terminalMode": "readonly",
+      "lifecycle": "single-use",
+      "cwd": "/home/gmusic",
+      "command": "bash",
+      "authUser": "mia",
+      "bindInterface": "tailscale0",
+      "maxClients": 1
+    }
+  ]
+}

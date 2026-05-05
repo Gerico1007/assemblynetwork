@@ -9,6 +9,7 @@ const path = require('path');
 const { scanNetwork, checkPort, getTailscaleNodes, scanTailscalePorts } = require('./scanner');
 const { logActivity, getActivityLog, getActivityByDate } = require('./activity-logger');
 const customServices = require('./services-store');
+const terminals = require('./terminal-services');
 
 const app = express();
 const PORT = process.env.PORT || 9000;
@@ -383,6 +384,104 @@ app.delete('/api/services/custom/:id', async (req, res) => {
 });
 
 /**
+ * GET /api/terminal/services
+ * List all configured terminal launch profiles + their runtime status.
+ * Each entry includes pid/status/url/password where applicable.
+ */
+app.get('/api/terminal/services', (req, res) => {
+  try {
+    const services = terminals.listAll();
+    res.json({ success: true, count: services.length, services });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/terminal/status/:id
+ * Status for a single profile — verifies the pid is still alive.
+ */
+app.get('/api/terminal/status/:id', (req, res) => {
+  try {
+    res.json({ success: true, service: terminals.statusFor(req.params.id) });
+  } catch (error) {
+    res.status(404).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/terminal/start/:id
+ * Spawn ttyd from the profile. Returns runtime state including the
+ * password (this dashboard runs on the same host so direct return is
+ * acceptable; the bridge itself binds tailscale-only).
+ */
+app.post('/api/terminal/start/:id', async (req, res) => {
+  try {
+    const state = terminals.startProcess(req.params.id);
+    await logActivity({
+      eventType: 'terminal_started',
+      host: state.host || state.device,
+      port: String(state.port),
+      service: state.name,
+      status: 'online',
+      metadata: {
+        id: state.id, pid: state.pid,
+        terminalMode: state.terminalMode,
+        lifecycle: state.lifecycle
+      }
+    }).catch(() => {});
+    res.json({ success: true, service: state });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/terminal/stop/:id
+ * SIGTERM, escalates to SIGKILL after 3s. Idempotent.
+ */
+app.post('/api/terminal/stop/:id', async (req, res) => {
+  try {
+    const result = terminals.stopProcess(req.params.id);
+    await logActivity({
+      eventType: 'terminal_stopped',
+      host: 'N/A', port: 'N/A',
+      service: 'Terminal Bridge',
+      status: 'offline',
+      metadata: { id: req.params.id }
+    }).catch(() => {});
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/terminal/restart/:id
+ */
+app.post('/api/terminal/restart/:id', async (req, res) => {
+  try {
+    const state = await terminals.restartProcess(req.params.id);
+    res.json({ success: true, service: state });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/terminal/rotate/:id
+ * Generate a new password and restart the bridge.
+ */
+app.post('/api/terminal/rotate/:id', async (req, res) => {
+  try {
+    const state = await terminals.rotatePassword(req.params.id);
+    res.json({ success: true, service: state });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * GET /api/status
  * Get server status and configuration
  */
@@ -422,6 +521,12 @@ API Endpoints:
   DELETE /api/services/custom/:id - Remove a custom service
   GET  /api/tailscale/nodes       - List tailnet devices
   GET  /api/tailscale/scan        - Probe tailnet peers for open ports
+  GET  /api/terminal/services     - List terminal bridge profiles + status
+  POST /api/terminal/start/:id    - Spawn ttyd from a profile
+  POST /api/terminal/stop/:id     - Stop a running ttyd bridge
+  POST /api/terminal/restart/:id  - Stop + start
+  POST /api/terminal/rotate/:id   - Rotate password (regenerate + restart)
+  GET  /api/terminal/status/:id   - Status of a single bridge
   GET  /api/activity              - Get activity log
   POST /api/check                 - Check specific port
   GET  /api/status                - Server status
@@ -444,8 +549,9 @@ Ready to discover your network! 🚀
 });
 
 // Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('\n🛑 Shutting down gracefully...');
+async function gracefulShutdown(signal) {
+  console.log(`\n🛑 Shutting down gracefully (${signal})...`);
+  try { terminals.shutdownAll(); } catch (e) { console.warn('terminal shutdown:', e.message); }
 
   await logActivity({
     eventType: 'server_stopped',
@@ -453,10 +559,12 @@ process.on('SIGTERM', async () => {
     port: PORT.toString(),
     service: 'AssemblyNetwork Dashboard',
     status: 'offline',
-    metadata: { reason: 'SIGTERM' }
+    metadata: { reason: signal }
   }).catch(() => {});
 
   process.exit(0);
-});
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
 
 module.exports = app;
