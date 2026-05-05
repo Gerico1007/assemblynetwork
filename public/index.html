@@ -435,6 +435,15 @@ tbody tr:hover td{background:var(--color-surface-offset)}
         <button class="filter-chip" data-filter="offline" onclick="setFilter(this,'offline')">Offline</button>
         <button class="filter-chip" data-filter="tailscale" onclick="setFilter(this,'tailscale')">Tailscale</button>
       </div>
+      <div class="paste-link-bar" style="display:flex;gap:var(--space-2);margin-bottom:var(--space-3);align-items:center">
+        <i data-lucide="link" style="width:14px;height:14px;color:var(--color-text-muted)"></i>
+        <input id="paste-url-input" type="text" class="search-input" style="flex:1"
+               placeholder="Paste service URL  (e.g. https://eury.ferret-harmonic.ts.net:8770/)"
+               onkeydown="if(event.key==='Enter') pasteServiceUrl()">
+        <button class="scan-btn" style="font-size:var(--text-xs)" onclick="pasteServiceUrl()">
+          <i data-lucide="plus" style="width:12px;height:12px"></i> Add
+        </button>
+      </div>
       <div class="servers-grid" id="servers-grid"></div>
     </section>
 
@@ -688,7 +697,32 @@ async function loadServers({ withScan = false } = {}) {
       // Use cached scan from /api/services if it has tailscale data; otherwise leave lastTsScan as-is.
     }
 
-    const userServers = JSON.parse(localStorage.getItem('an_user_servers') || '[]');
+    const localUserServers = JSON.parse(localStorage.getItem('an_user_servers') || '[]');
+
+    // Backend-backed user services (paste-a-link store, persists across restarts).
+    let backendUserServers = [];
+    try {
+      const cs = await fetchJSON('/api/services/custom');
+      backendUserServers = (cs.services || []).map(s => ({
+        id: 'custom:' + s.id,
+        customId: s.id,
+        name: s.name || `${s.device}:${s.port}`,
+        url: `${s.protocol}://${s.host}:${s.port}${s.path || '/'}`,
+        device: s.device,
+        port: s.port,
+        protocol: s.protocol,
+        status: 'configured',
+        cat: s.category || portCategory(s.port),
+        ts: /\.ts\.net$/.test(s.host) || /^ferret-harmonic/.test(s.host),
+        uptime: '—',
+        latency: '—',
+        readonly: false,
+        source: 'user'
+      }));
+    } catch (e) {
+      // Backend not yet upgraded? Continue with localStorage only.
+    }
+
     const discoveredServers = [];
     let id = 100000;
     for (const r of lastTsScan) {
@@ -704,11 +738,20 @@ async function loadServers({ withScan = false } = {}) {
           ts: true,
           uptime: '—',
           latency: '—',
-          readonly: true
+          readonly: true,
+          source: 'scan'
         });
       }
     }
-    servers = [...discoveredServers, ...userServers];
+
+    // Override semantics: a user-added service for the same device+port wins
+    // over the discovered scan record. We drop the scan record and let the
+    // backend record represent that slot.
+    const userKey = s => `${s.device}::${s.port}`;
+    const userKeys = new Set(backendUserServers.map(userKey));
+    const filteredScan = discoveredServers.filter(s => !userKeys.has(userKey(s)));
+
+    servers = [...backendUserServers, ...filteredScan, ...localUserServers];
 
     // Enrich tsNodes with port lists from this scan
     for (const r of lastTsScan) {
@@ -843,12 +886,46 @@ async function toggleServer(id) {
   }
 }
 
-function removeServer(id) {
+async function removeServer(id) {
+  // Backend-backed custom service: delete via API and reload.
+  if (typeof id === 'string' && id.startsWith('custom:')) {
+    const customId = id.slice('custom:'.length);
+    try {
+      await fetchJSON('/api/services/custom/' + encodeURIComponent(customId), { method: 'DELETE' });
+      toast('Custom service removed', 'info');
+      await loadServers();
+    } catch (e) {
+      toast('Remove failed: ' + e.message, 'error');
+    }
+    return;
+  }
+  // Legacy localStorage entry.
   const stored = JSON.parse(localStorage.getItem('an_user_servers') || '[]');
   const updated = stored.filter(s => s.id !== id);
   localStorage.setItem('an_user_servers', JSON.stringify(updated));
   loadServers();
   toast('Server removed','info');
+}
+
+// Paste-a-link: parse a URL on the backend and store it persistently.
+// Called by the Add button in the Servers page filter bar.
+async function pasteServiceUrl() {
+  const input = document.getElementById('paste-url-input');
+  const url = (input.value || '').trim();
+  if (!url) { toast('Paste a URL first', 'info'); return; }
+  try {
+    const j = await fetchJSON('/api/services/custom', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    input.value = '';
+    toast(`Added ${j.service.name}`, 'success');
+    await loadServers();
+    if (currentPage !== 'servers') navigate('servers');
+  } catch (e) {
+    toast('Add failed: ' + e.message, 'error');
+  }
 }
 
 // ── Tailscale ──

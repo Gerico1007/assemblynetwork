@@ -21,3 +21,7 @@ Thumbs.db
 *.pid
 *.seed
 *.pid.lock
+
+# Persistent dashboard state (user-added services, terminal runtime)
+data/custom-services.json
+data/terminal-runtime.json

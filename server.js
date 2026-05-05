@@ -8,6 +8,7 @@ const express = require('express');
 const path = require('path');
 const { scanNetwork, checkPort, getTailscaleNodes, scanTailscalePorts } = require('./scanner');
 const { logActivity, getActivityLog, getActivityByDate } = require('./activity-logger');
+const customServices = require('./services-store');
 
 const app = express();
 const PORT = process.env.PORT || 9000;
@@ -316,6 +317,72 @@ app.get('/api/tailscale/scan', async (req, res) => {
 });
 
 /**
+ * GET /api/services/custom
+ * List user-pasted services from the persistent store.
+ */
+app.get('/api/services/custom', (req, res) => {
+  try {
+    const services = customServices.listServices();
+    res.json({ success: true, count: services.length, services });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/services/custom
+ * Body: { url: "https://eury.ferret-harmonic.ts.net:8770/", name?: "Conductor", category?: "forest" }
+ * Dedupes by device+port. Returns the created or updated record.
+ */
+app.post('/api/services/custom', async (req, res) => {
+  try {
+    const { url, name, category } = req.body || {};
+    const record = customServices.addService({ url, name, category });
+
+    await logActivity({
+      eventType: 'custom_service_added',
+      host: record.host,
+      port: String(record.port),
+      service: record.name,
+      status: 'configured',
+      metadata: {
+        id: record.id,
+        device: record.device,
+        protocol: record.protocol,
+        category: record.category || null
+      }
+    }).catch(() => {});
+
+    res.json({ success: true, service: record });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/services/custom/:id
+ */
+app.delete('/api/services/custom/:id', async (req, res) => {
+  try {
+    const ok = customServices.deleteService(req.params.id);
+    if (!ok) {
+      return res.status(404).json({ success: false, error: 'not found' });
+    }
+    await logActivity({
+      eventType: 'custom_service_removed',
+      host: 'N/A',
+      port: 'N/A',
+      service: 'Custom Services Store',
+      status: 'configured',
+      metadata: { id: req.params.id }
+    }).catch(() => {});
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * GET /api/status
  * Get server status and configuration
  */
@@ -348,13 +415,16 @@ app.listen(PORT, '0.0.0.0', () => {
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 API Endpoints:
-  GET  /api/scan              - Trigger LAN network scan
-  GET  /api/services          - Get discovered LAN services
-  GET  /api/tailscale/nodes   - List tailnet devices
-  GET  /api/tailscale/scan    - Probe tailnet peers for open ports
-  GET  /api/activity          - Get activity log
-  POST /api/check             - Check specific port
-  GET  /api/status            - Server status
+  GET  /api/scan                  - Trigger LAN network scan
+  GET  /api/services              - Get discovered LAN services
+  GET  /api/services/custom       - List user-pasted services
+  POST /api/services/custom       - Add a service from a URL
+  DELETE /api/services/custom/:id - Remove a custom service
+  GET  /api/tailscale/nodes       - List tailnet devices
+  GET  /api/tailscale/scan        - Probe tailnet peers for open ports
+  GET  /api/activity              - Get activity log
+  POST /api/check                 - Check specific port
+  GET  /api/status                - Server status
 
 Ready to discover your network! 🚀
   `);
