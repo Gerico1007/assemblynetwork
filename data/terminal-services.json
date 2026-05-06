@@ -3,7 +3,7 @@
   "terminalServices": [
     {
       "id": "assemblynetwork",
-      "name": "AssemblyNetwork Dev Terminal",
+      "name": "Network Dev Terminal",
       "device": "eury",
       "host": "eury.ferret-harmonic.ts.net",
       "protocol": "http",
