@@ -38,7 +38,7 @@
     },
     {
       "id": "forest",
-      "name": "Forest of Gerico Terminal",
+      "name": "Forest Terminal",
       "device": "eury",
       "host": "eury.ferret-harmonic.ts.net",
       "protocol": "http",
