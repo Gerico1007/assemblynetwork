@@ -19,16 +19,17 @@
       "maxClients": 1
     },
     {
+      "_comment_hermes": "Moved off 7681 — Jerry has a long-running ttyd there (nyro:hello123, started May 4). 7685 is free. Lifecycle is persistent so reconnects work.",
       "id": "hermes",
       "name": "Hermes Skills Terminal",
       "device": "eury",
       "host": "eury.ferret-harmonic.ts.net",
       "protocol": "http",
-      "port": 7681,
+      "port": 7685,
       "category": "agent",
       "bridge": "ttyd",
       "terminalMode": "readonly",
-      "lifecycle": "single-use",
+      "lifecycle": "persistent",
       "cwd": "/home/gmusic/.hermes",
       "command": "bash",
       "authUser": "mia",
@@ -53,6 +54,7 @@
       "maxClients": 1
     },
     {
+      "_comment_claude": "Was readonly+single-use which makes ttyd exit after the first browser disconnects (-o flag). Switched to persistent so reconnects work; kept readonly so it remains a watch-only viewer by default.",
       "id": "claude",
       "name": "Claude Agent Terminal",
       "device": "eury",
@@ -62,7 +64,7 @@
       "category": "agent",
       "bridge": "ttyd",
       "terminalMode": "readonly",
-      "lifecycle": "single-use",
+      "lifecycle": "persistent",
       "cwd": "/home/gmusic",
       "command": "bash",
       "authUser": "mia",

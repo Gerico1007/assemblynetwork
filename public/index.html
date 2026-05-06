@@ -871,8 +871,8 @@ function serverCard(s) {
     <div class="server-card-header">
       <div class="server-icon ${s.status}"><i data-lucide="${iconFor(s.cat)}"></i></div>
       <div class="server-meta">
-        <div class="server-name">${s.name}</div>
-        <div class="server-url">${s.url}</div>
+        <div class="server-name">${s.name}  <span style="font-family:monospace;color:var(--color-primary);font-weight:600">:${s.port}</span></div>
+        <div class="server-url" style="white-space:normal;word-break:break-all" title="${s.url}">${s.url}</div>
       </div>
       <div class="server-status ${s.status}">
         <div class="status-dot ${s.status}"></div>${s.status}
@@ -1003,8 +1003,8 @@ function terminalCard(t) {
     <div class="server-card-header">
       <div class="server-icon ${dot}"><i data-lucide="${modeIcon}"></i></div>
       <div class="server-meta">
-        <div class="server-name">${t.name}</div>
-        <div class="server-url">${t.url}</div>
+        <div class="server-name">${t.name}  <span style="font-family:monospace;color:var(--color-primary);font-weight:600">:${t.port}</span></div>
+        <div class="server-url" style="white-space:normal;word-break:break-all" title="${t.url}">${t.url}</div>
       </div>
       <div class="server-status ${dot}">
         <div class="status-dot ${dot}"></div>${t.status}
