@@ -60,45 +60,23 @@ SSH KEY OK :   yes | no | unsure   (can `ssh -p 8022 host "echo ok"` run without
 
 ### `assembly-voice` — Assembly Voice
 - **PORT:** 4444   *(matches the card in your screenshot — confirm)*
-- **PROTOCOL:** ?  *(http or https?)*
+- **PROTOCOL:** http
 - **CWD:** `/home/gmusic/workspace/assembly-voice`
 - **COMMAND:** `npm start`   *(your example)*
 - **NOTES:**
 
 ### `naas` — NaaS
-- **PORT:** ?
-- **PROTOCOL:** ?
-- **CWD:** `/home/gmusic/workspace/naas`
-- **COMMAND:** ?
-- **NOTES:** found in `~/.claude/projects/-home-gmusic-workspace-naas` — what is this project, what does it serve?
+ — what is this project, what does it serve: not a project for the Assembly Network 
 
 ### `echothreads` — EchoThreads
-- **PORT:** ?
-- **PROTOCOL:** ?
-- **CWD:** `/home/gmusic/workspace/EchoThreads`
-- **COMMAND:** ?
-- **NOTES:**
+- probably added later from form on the site of the Assembly Network 
 
 ### `forest-eury` — Forest Conductor (eury)
-- **PORT:** 8770   *(from your earlier paste-link `https://eury…:8770/`)*
+- **PORT:** 8770   *(from your earlier paste-link `https://eury…:8770/`)
 - **PROTOCOL:** https
-- **CWD:** ?
+- **CWD:** 
 - **COMMAND:** ?
-- **NOTES:** the "Conductor" card you pasted — what folder/script starts it?
-
-### `gradio` — Gradio
-- **PORT:** 8083   *(per scanner KNOWN_PORTS for eury)*
-- **PROTOCOL:** http
-- **CWD:** ?
-- **COMMAND:** ?
-- **NOTES:** which gradio app?
-
-### `jupyter` — Jupyter
-- **PORT:** 8888
-- **PROTOCOL:** http
-- **CWD:** ?
-- **COMMAND:** ?    *(`jupyter lab`? `jupyter notebook`? a venv to activate first?)*
-- **NOTES:**
+- **NOTES:** the "Conductor" card you pasted — what folder/script starts 
 
 ### `websocket-eury` — WebSocket service
 - **PORT:** 8765
@@ -175,7 +153,7 @@ Pattern: dashboard runs `ssh -p PORT host "cd CWD && COMMAND"`. Requires key-aut
 
 ## Open meta-questions
 
-1. **SSH key access from Eury → Termux nodes:** are passwordless logins working today? Test:
+1. **SSH key access from Eury → Termux 
    ```bash
    ssh -p 8022 larix.ferret-harmonic.ts.net "echo ok"
    ssh -p 8022 ilex.ferret-harmonic.ts.net  "echo ok"
